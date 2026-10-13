@@ -2,7 +2,7 @@ export type Evidence = "observed" | "inferred" | "unknown";
 export type SpecItem = { id: string; text: string; evidence: Evidence };
 export type FeatureId = "enroll" | "filter" | "calendar" | "signup" | "custom";
 export type FeatureSpec = { feature: FeatureId; title: string; items: SpecItem[] };
-export type InspectionReport = { schema: "sitelab-inspection-v1"; url: string; observedAt: string; source: "playwright"; findings: Array<{kind: string; label: string; url: string}>; rea?: {status:string} }; 
+export type InspectionReport = { schema: "sitelab-inspection-v1"; url: string; observedAt: string; source: "playwright" | "public-html"; findings: Array<{kind: string; label: string; url: string}>; rea?: {status:string} }; 
 export type Project = {
   id: string;
   url: string;
@@ -116,7 +116,7 @@ export function buildMarkdown(p: Project): string {
   const unknowns = p.specs.flatMap((s) => s.items.filter((x) => x.evidence === "unknown" && x.text.trim()).map((x) => `${s.title}: ${x.text.trim()}`));
   lines.push("## 구현 전 확인할 질문", ...(unknowns.length ? unknowns.map((u) => `- ${u}`) : ["- 없음"]), "");
   if (p.inspection) {
-    lines.push("## 실제 공개 화면 관찰 (Playwright)",
+    lines.push("## 실제 공개 화면 관찰 (${p.inspection.source === "public-html" ? "공개 HTML" : "Playwright"})",
       `- 관찰 시각: ${p.inspection.observedAt}`,
       `- 분석 출처: ${p.inspection.url}`, "");
     for (const finding of p.inspection.findings.slice(0,100)) {
@@ -140,7 +140,7 @@ export function buildCodexPrompt(p: Project): string {
 
 [맥락]
 참고 사이트: ${p.url} (${host})
-주의: 이 요구사항은 사용자가 편집한 데모 명세입니다. ${p.inspection ? "Playwright로 관찰된 공개 화면 증거는 아래에 있으며 서버 로직은 확인되지 않았습니다." : "사이트 실제 분석 결과가 아닙니다."} "추정"/"미확인" 항목은 가정으로 취급하고, 가정한 내용을 PR 설명에 명시하세요. 참고 사이트의 코드·디자인·문구를 복제하지 마세요.
+주의: 이 요구사항은 사용자가 편집한 데모 명세입니다. ${p.inspection ? "공개 화면에서 관찰된 증거는 아래에 있으며 서버 로직은 확인되지 않았습니다." : "사이트 실제 분석 결과가 아닙니다."} "추정"/"미확인" 항목은 가정으로 취급하고, 가정한 내용을 PR 설명에 명시하세요. 참고 사이트의 코드·디자인·문구를 복제하지 마세요.
 
 [실제 관찰 근거]
 ${p.inspection ? p.inspection.findings.slice(0,100).map(x => `- ${x.kind}: ${x.label} (${x.url})`).join("\n") : "없음 - 데모 모드"}
