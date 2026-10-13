@@ -43,7 +43,7 @@ function Index() {
   useEffect(() => setHistory(loadHistory()), []);
 
   const project: Project = { id: projectId, url, features, customNote, specs, createdAt, inspection };
-  const output = useMemo(() => (tab === "md" ? buildMarkdown(project) : buildCodexPrompt(project)), [tab, specs, url, createdAt]);
+  const output = useMemo(() => (tab === "md" ? buildMarkdown(project) : buildCodexPrompt(project)), [tab, specs, url, createdAt, inspection]);
 
   const importInspection = async (file: File | undefined) => {
     if (!file) return;
