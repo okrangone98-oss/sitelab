@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   FEATURES, buildCodexPrompt, buildMarkdown, clearHistory, demoSpecs, evidenceLabel, loadHistory,
   newId, newItem, safeHost, saveToHistory, validateUrl,
-  type Evidence, type FeatureId, type FeatureSpec, type Project,
+  type Evidence, type FeatureId, type FeatureSpec, type Project, type InspectionReport,
 } from "@/lib/sitelab";
 
 export const Route = createFileRoute("/")({
@@ -37,12 +37,32 @@ function Index() {
   const [history, setHistory] = useState<Project[]>([]);
   const [tab, setTab] = useState<"md" | "codex">("md");
   const [copied, setCopied] = useState("");
+  const [inspection, setInspection] = useState<InspectionReport | null>(null);
+  const [inspectionError, setInspectionError] = useState("");
 
   useEffect(() => setHistory(loadHistory()), []);
 
-  const project: Project = { id: projectId, url, features, customNote, specs, createdAt };
+  const project: Project = { id: projectId, url, features, customNote, specs, createdAt, inspection };
   const output = useMemo(() => (tab === "md" ? buildMarkdown(project) : buildCodexPrompt(project)), [tab, specs, url, createdAt]);
 
+  const importInspection = async (file: File | undefined) => {
+    if (!file) return;
+    setInspectionError("");
+    if (file.size > 2_000_000) return setInspectionError("분석 파일은 2MB 이하여야 합니다.");
+    try {
+      const raw: unknown = JSON.parse(await file.text());
+      if (!raw || typeof raw !== "object") throw new Error("분석 파일 형식이 올바르지 않습니다.");
+      const doc = raw as Partial<InspectionReport>;
+      if (doc.schema !== "sitelab-inspection-v1" || doc.source !== "playwright" ||
+        typeof doc.url !== "string" || !Array.isArray(doc.findings) || doc.findings.length > 100 ||
+        !doc.findings.every(f => typeof f.label === "string" && typeof f.kind === "string" && typeof f.url === "string"))
+        throw new Error("SiteLab Playwright 분석 JSON이 아닙니다.");
+      const validated = validateUrl(doc.url);
+      if (!validated.ok) throw new Error("분석 출처 URL이 잘못됐습니다.");
+      setInspection(doc as InspectionReport);
+      setUrlInput(validated.url);
+    } catch (err) { setInspectionError(err instanceof Error ? err.message : "JSON을 불러올 수 없습니다."); }
+  };
   const submitUrl = (e: React.FormEvent) => {
     e.preventDefault();
     const r = validateUrl(urlInput);
@@ -70,11 +90,12 @@ function Index() {
     a.click(); URL.revokeObjectURL(a.href);
   };
   const restore = (p: Project) => {
+    setInspection(p.inspection || null);
     setProjectId(p.id); setUrl(p.url); setUrlInput(p.url); setFeatures(p.features); setCustomNote(p.customNote);
     setSpecs(p.specs); setCreatedAt(p.createdAt); setStage(3);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
-  const reset = () => { setProjectId(newId()); setStage(0); setUrl(""); setUrlInput(""); setFeatures([]); setCustomNote(""); setSpecs([]); };
+  const reset = () => { setInspection(null); setInspectionError(""); setProjectId(newId()); setStage(0); setUrl(""); setUrlInput(""); setFeatures([]); setCustomNote(""); setSpecs([]); };
   const canGo = (i: number) => i === 0 || (i === 1 && !!url) || (i === 2 && specs.length > 0) || (i === 3 && specs.length > 0);
 
   return (
@@ -84,7 +105,7 @@ function Index() {
           <button onClick={reset} className="flex items-center gap-2 font-mono text-sm font-semibold tracking-tight">
             <span className="neon-tick inline-block h-3 w-3 bg-primary text-primary" aria-hidden /> SITELAB
           </button>
-          <span className="rounded-sm border border-secondary px-2 py-1 font-mono text-[11px] text-secondary">DEMO · 분석 엔진 미연결</span>
+          <span className="rounded-sm border border-secondary px-2 py-1 font-mono text-[11px] text-secondary">LOCAL · 분석 파일 가져오기 지원</span>
         </div>
       </header>
 
@@ -127,6 +148,14 @@ function Index() {
                   <PrimaryBtn type="submit">다음 →</PrimaryBtn>
                 </div>
                 <p id="url-err" role="alert" className="mt-2 min-h-5 text-sm text-destructive">{urlError}</p>
+                <div className="mt-5 rounded-sm border border-border bg-card p-4">
+                  <label htmlFor="inspection-file" className="block text-sm font-semibold text-primary">실제 분석 결과 불러오기 (선택)</label>
+                  <p className="mt-1 text-xs text-muted-foreground">로컬 Playwright 분석 명령에서 생성한 inspection.json 파일을 선택하세요. 외부로 업로드되지 않습니다.</p>
+                  <input id="inspection-file" type="file" accept=".json,application/json"
+                    className="mt-3 block w-full text-sm" onChange={e => void importInspection(e.currentTarget.files?.[0])}/>
+                  {inspection && <p className="mt-2 text-sm text-tertiary">실제 공개 화면 관찰 {inspection.findings.length}개 · {safeHost(inspection.url)}</p>}
+                  {inspectionError && <p role="alert" className="mt-2 text-sm text-destructive">{inspectionError}</p>}
+                </div>
               </form>
             )}
 
@@ -164,6 +193,13 @@ function Index() {
                   <b className="text-secondary">데모 데이터</b> — 브라우저 분석 엔진이 연결되지 않아 {safeHost(url)}에 접속하지 않았습니다. 직접 확인한 항목만 “관찰됨”으로 바꾸세요.
                 </div>
                 <div className="mb-4 flex flex-wrap gap-4 text-xs">{EVS.map((e) => <span key={e} className="flex items-center gap-2"><i className={`h-2 w-2 rounded-full ${evDot[e]}`} />{evidenceLabel(e)}</span>)}</div>
+                {inspection && <section className="mb-5 rounded-sm border border-tertiary bg-card p-5">
+                  <h3 className="text-xl font-bold text-tertiary">실제 공개 화면 관찰 · {inspection.findings.length}개</h3>
+                  <p className="mt-2 text-xs text-muted-foreground">Playwright 수집 자료입니다. 아래 기능별 명세 카드는 여전히 편집 가능한 예시이며, 서버 내부 구현은 확인되지 않았습니다.</p>
+                  <ul className="mt-3 max-h-64 space-y-2 overflow-y-auto text-sm">
+                    {inspection.findings.map((item, i) => <li key={i}><span className="mr-2 font-mono text-tertiary">{item.kind}</span>{item.label}</li>)}
+                  </ul>
+                </section>}
                 <div className="space-y-4">
                   {specs.map((sp, fi) => (
                     <article key={sp.feature} className="rounded-sm border border-border bg-ink p-5 text-bone">
