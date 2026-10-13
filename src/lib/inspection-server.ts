@@ -5,7 +5,7 @@ export type LiveResult = {
   schema: "sitelab-inspection-v1";
   url: string;
   observedAt: string;
-  source: "playwright";
+  source: "public-html";
   findings: LiveFinding[];
   rea: { status: "not_requested" };
   method: "public-html";
@@ -77,7 +77,7 @@ export const inspectPublicPage = createServerFn({ method: "POST" })
     const buffer = new Uint8Array(length); let offset = 0;
     for (const chunk of chunks) { buffer.set(chunk, offset); offset += chunk.length; }
     const html = new TextDecoder("utf-8").decode(buffer);
-    return { schema: "sitelab-inspection-v1" as const, source: "playwright" as const,
+    return { schema: "sitelab-inspection-v1" as const, source: "public-html" as const,
       method: "public-html" as const, url: url.href, observedAt: new Date().toISOString(),
       findings: extractPublicHtml(html, url.href), rea: { status: "not_requested" as const } };
   });
