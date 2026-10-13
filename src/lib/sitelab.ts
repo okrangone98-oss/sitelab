@@ -2,6 +2,7 @@ export type Evidence = "observed" | "inferred" | "unknown";
 export type SpecItem = { id: string; text: string; evidence: Evidence };
 export type FeatureId = "enroll" | "filter" | "calendar" | "signup" | "custom";
 export type FeatureSpec = { feature: FeatureId; title: string; items: SpecItem[] };
+export type InspectionReport = { schema: "sitelab-inspection-v1"; url: string; observedAt: string; source: "playwright"; findings: Array<{kind: string; label: string; url: string}>; rea?: {status:string} }; 
 export type Project = {
   id: string;
   url: string;
@@ -9,6 +10,7 @@ export type Project = {
   customNote: string;
   specs: FeatureSpec[];
   createdAt: number;
+  inspection?: InspectionReport | null;
 };
 
 export function validateUrl(input: string): { ok: true; url: string } | { ok: false; error: string } {
@@ -84,7 +86,7 @@ export function buildMarkdown(p: Project): string {
   const lines: string[] = [
     `# SiteLab 요구사항 명세 — ${host}`,
     "",
-    `> ⚠️ 이 문서는 **데모 명세**입니다. 브라우저 분석 엔진(Playwright/REA)이 아직 연결되지 않아 대상 사이트를 실제로 방문·분석하지 않았습니다. "관찰됨" 항목은 사용자가 직접 확인해 표시한 것입니다.`,
+    p.inspection ? `> ⚠️ 요구사항은 데모 예시입니다. 별도 Playwright 작업으로 수집한 실제 화면 관찰만 아래에 별도 표시합니다. 서버 내부 기능은 확인되지 않았습니다.` : `> ⚠️ 이 문서는 **데모 명세**입니다. 브라우저 분석 엔진(Playwright/REA)이 아직 연결되지 않아 대상 사이트를 실제로 방문·분석하지 않았습니다. "관찰됨" 항목은 사용자가 직접 확인해 표시한 것입니다.`,
     "",
     `- 참고 URL: ${p.url}`,
     `- 생성일: ${new Date(p.createdAt).toLocaleString("ko-KR")}`,
@@ -113,6 +115,15 @@ export function buildMarkdown(p: Project): string {
   });
   const unknowns = p.specs.flatMap((s) => s.items.filter((x) => x.evidence === "unknown" && x.text.trim()).map((x) => `${s.title}: ${x.text.trim()}`));
   lines.push("## 구현 전 확인할 질문", ...(unknowns.length ? unknowns.map((u) => `- ${u}`) : ["- 없음"]), "");
+  if (p.inspection) {
+    lines.push("## 실제 공개 화면 관찰 (Playwright)",
+      `- 관찰 시각: ${p.inspection.observedAt}`,
+      `- 분석 출처: ${p.inspection.url}`, "");
+    for (const finding of p.inspection.findings.slice(0,100)) {
+      lines.push(`- [관찰됨] ${finding.kind}: ${finding.label}`);
+    }
+    lines.push("", "관찰 자료는 외부 사이트의 서버/DB 구현 근거가 아닙니다.", "");
+  }
   lines.push("## 비범위", "- 참고 사이트의 로고·이미지·문구·소스코드 복사", "- 참고 사이트 서버에 대한 자동 수집(스크래핑)", "");
   return lines.join("\n");
 }
@@ -129,7 +140,10 @@ export function buildCodexPrompt(p: Project): string {
 
 [맥락]
 참고 사이트: ${p.url} (${host})
-주의: 이 요구사항은 실제 사이트 분석 결과가 아닌 사용자가 편집한 데모 명세입니다. "추정"/"미확인" 항목은 가정으로 취급하고, 가정한 내용을 PR 설명에 명시하세요. 참고 사이트의 코드·디자인·문구를 복제하지 마세요.
+주의: 이 요구사항은 사용자가 편집한 데모 명세입니다. ${p.inspection ? "Playwright로 관찰된 공개 화면 증거는 아래에 있으며 서버 로직은 확인되지 않았습니다." : "사이트 실제 분석 결과가 아닙니다."} "추정"/"미확인" 항목은 가정으로 취급하고, 가정한 내용을 PR 설명에 명시하세요. 참고 사이트의 코드·디자인·문구를 복제하지 마세요.
+
+[실제 관찰 근거]
+${p.inspection ? p.inspection.findings.slice(0,100).map(x => `- ${x.kind}: ${x.label} (${x.url})`).join("\n") : "없음 - 데모 모드"}
 
 [구현할 기능]
 ${body}
