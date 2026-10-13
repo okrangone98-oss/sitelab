@@ -1,3 +1,4 @@
+import { inspectPublicPage } from "@/lib/inspection-server";
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -39,12 +40,26 @@ function Index() {
   const [copied, setCopied] = useState("");
   const [inspection, setInspection] = useState<InspectionReport | null>(null);
   const [inspectionError, setInspectionError] = useState("");
+  const [inspecting, setInspecting] = useState(false);
 
   useEffect(() => setHistory(loadHistory()), []);
 
   const project: Project = { id: projectId, url, features, customNote, specs, createdAt, inspection };
   const output = useMemo(() => (tab === "md" ? buildMarkdown(project) : buildCodexPrompt(project)), [tab, specs, url, createdAt, inspection]);
 
+  const analyzeUrl = async () => {
+    const checked = validateUrl(urlInput);
+    if (!checked.ok) { setUrlError(checked.error); return; }
+    setInspecting(true); setInspectionError(""); setUrlError("");
+    try {
+      const report = await inspectPublicPage({ data: { url: checked.url } });
+      setInspection(report);
+      setUrl(checked.url);
+      setStage(1);
+    } catch (err) {
+      setInspectionError(err instanceof Error ? err.message : "온라인 분석에 실패했습니다.");
+    } finally { setInspecting(false); }
+  };
   const importInspection = async (file: File | undefined) => {
     if (!file) return;
     setInspectionError("");
@@ -53,7 +68,7 @@ function Index() {
       const raw: unknown = JSON.parse(await file.text());
       if (!raw || typeof raw !== "object") throw new Error("분석 파일 형식이 올바르지 않습니다.");
       const doc = raw as Partial<InspectionReport>;
-      if (doc.schema !== "sitelab-inspection-v1" || doc.source !== "playwright" ||
+      if (doc.schema !== "sitelab-inspection-v1" || !["playwright","public-html"].includes(doc.source ?? "") ||
         typeof doc.url !== "string" || !Array.isArray(doc.findings) || doc.findings.length > 100 ||
         !doc.findings.every(f => typeof f.label === "string" && typeof f.kind === "string" && typeof f.url === "string"))
         throw new Error("SiteLab Playwright 분석 JSON이 아닙니다.");
@@ -105,7 +120,7 @@ function Index() {
           <button onClick={reset} className="flex items-center gap-2 font-mono text-sm font-semibold tracking-tight">
             <span className="neon-tick inline-block h-3 w-3 bg-primary text-primary" aria-hidden /> SITELAB
           </button>
-          <span className="rounded-sm border border-secondary px-2 py-1 font-mono text-[11px] text-secondary">LOCAL · 분석 파일 가져오기 지원</span>
+          <span className="rounded-sm border border-secondary px-2 py-1 font-mono text-[11px] text-secondary">BETA · 허용된 공개 HTML 분석</span>
         </div>
       </header>
 
@@ -148,6 +163,10 @@ function Index() {
                   <PrimaryBtn type="submit">다음 →</PrimaryBtn>
                 </div>
                 <p id="url-err" role="alert" className="mt-2 min-h-5 text-sm text-destructive">{urlError}</p>
+                <button type="button" disabled={inspecting} onClick={() => void analyzeUrl()}
+                  className="mt-3 rounded-sm border border-primary px-5 py-3 text-sm font-semibold text-primary hover:bg-card disabled:opacity-40">
+                  {inspecting ? "공개 페이지 분석 중…" : "사이트 분석 시작 ↗"}
+                </button>
                 <div className="mt-5 rounded-sm border border-border bg-card p-4">
                   <label htmlFor="inspection-file" className="block text-sm font-semibold text-primary">실제 분석 결과 불러오기 (선택)</label>
                   <p className="mt-1 text-xs text-muted-foreground">로컬 Playwright 분석 명령에서 생성한 inspection.json 파일을 선택하세요. 외부로 업로드되지 않습니다.</p>
@@ -195,7 +214,7 @@ function Index() {
                 <div className="mb-4 flex flex-wrap gap-4 text-xs">{EVS.map((e) => <span key={e} className="flex items-center gap-2"><i className={`h-2 w-2 rounded-full ${evDot[e]}`} />{evidenceLabel(e)}</span>)}</div>
                 {inspection && <section className="mb-5 rounded-sm border border-tertiary bg-card p-5">
                   <h3 className="text-xl font-bold text-tertiary">실제 공개 화면 관찰 · {inspection.findings.length}개</h3>
-                  <p className="mt-2 text-xs text-muted-foreground">Playwright 수집 자료입니다. 아래 기능별 명세 카드는 여전히 편집 가능한 예시이며, 서버 내부 구현은 확인되지 않았습니다.</p>
+                  <p className="mt-2 text-xs text-muted-foreground">공개 HTML 또는 Playwright 수집 자료입니다. 아래 기능별 명세 카드는 여전히 편집 가능한 예시이며, 서버 내부 구현은 확인되지 않았습니다.</p>
                   <ul className="mt-3 max-h-64 space-y-2 overflow-y-auto text-sm">
                     {inspection.findings.map((item, i) => <li key={i}><span className="mr-2 font-mono text-tertiary">{item.kind}</span>{item.label}</li>)}
                   </ul>
